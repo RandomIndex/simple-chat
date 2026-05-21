@@ -13,22 +13,41 @@
     const myCodeSpan = document.getElementById('my-code');
     const statusText = document.getElementById('status-text');
     const connectionPanel = document.getElementById('connection-panel');
+    const copyCodeBtn = document.getElementById('copy-code-btn');
+    const newChatBtn = document.getElementById('new-chat-btn');
 
-    // Функция отключения/включения ввода
+    // Блокировка / разблокировка ввода
     function setInputEnabled(enabled) {
         messageInput.contentEditable = enabled;
         sendBtn.disabled = !enabled;
         if (!enabled) messageInput.innerText = '';
     }
 
-    // Инициализация Peer сразу при загрузке
+    // Очистка и создание нового Peer
+    function createNewPeer() {
+        if (myPeer) {
+            myPeer.destroy();
+        }
+        if (conn) {
+            conn.close();
+            conn = null;
+        }
+        chatActive = false;
+        messages = [];
+        renderMessages();
+        connectionPanel.style.display = 'block';
+        statusText.textContent = 'Генерация нового кода...';
+        setInputEnabled(false);
+        myCodeSpan.textContent = '—';
+        initPeer();
+    }
+
     function initPeer() {
-        statusText.textContent = 'Подключение к сети...';
         myPeer = new Peer();
 
         myPeer.on('open', (id) => {
             myCodeSpan.textContent = id;
-            statusText.textContent = 'Ожидание собеседника';
+            statusText.textContent = 'Ожидайте подключения собеседника';
         });
 
         myPeer.on('connection', (incomingConn) => {
@@ -48,7 +67,7 @@
     function setupConnection() {
         conn.on('open', () => {
             chatActive = true;
-            connectionPanel.style.display = 'none'; // скрываем панель подключения
+            connectionPanel.style.display = 'none';
             setInputEnabled(true);
             addSystemMessage('Собеседник подключился');
             loadHistory();
@@ -71,7 +90,7 @@
             resetChat();
         });
 
-        conn.on('error', (err) => {
+        conn.on('error', () => {
             addSystemMessage('Ошибка соединения');
             resetChat();
         });
@@ -84,7 +103,7 @@
         messages = [];
         renderMessages();
         connectionPanel.style.display = 'block';
-        statusText.textContent = 'Ожидание собеседника';
+        statusText.textContent = 'Соединение разорвано. Можете начать новый чат.';
         setInputEnabled(false);
     }
 
@@ -93,7 +112,7 @@
         div.className = 'system-message';
         div.textContent = text;
         messagesContainer.appendChild(div);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        scrollToBottom();
     }
 
     function addMessage(msg) {
@@ -118,7 +137,7 @@
             wrapper.appendChild(timeDiv);
             messagesContainer.appendChild(wrapper);
         });
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        scrollToBottom();
     }
 
     function sendMessage() {
@@ -151,16 +170,35 @@
         }
     }
 
+    function scrollToBottom() {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
     // Обработчики
     connectBtn.addEventListener('click', () => {
         const remoteId = remoteIdInput.value.trim();
         if (!remoteId) return;
         if (conn) {
-            alert('Уже подключены');
+            alert('Вы уже подключены. Начните новый чат, чтобы сменить собеседника.');
             return;
         }
         conn = myPeer.connect(remoteId, { reliable: true });
         setupConnection();
+    });
+
+    copyCodeBtn.addEventListener('click', () => {
+        const code = myCodeSpan.textContent;
+        if (!code || code === '—') return;
+        navigator.clipboard.writeText(code).then(() => {
+            copyCodeBtn.textContent = '✅';
+            setTimeout(() => { copyCodeBtn.textContent = '📋'; }, 1500);
+        });
+    });
+
+    newChatBtn.addEventListener('click', () => {
+        if (confirm('Начать новый чат? Текущее соединение будет разорвано.')) {
+            createNewPeer();
+        }
     });
 
     sendBtn.addEventListener('click', sendMessage);
@@ -172,6 +210,6 @@
     });
 
     // Старт
-    setInputEnabled(false); // поле ввода заблокировано до подключения
+    setInputEnabled(false);
     initPeer();
 })();

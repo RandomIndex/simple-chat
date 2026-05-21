@@ -9,25 +9,33 @@
 </head>
 <body>
     <div id="chat-container">
-        <!-- Панель подключения (видна до установки связи) -->
-        <div id="connection-panel">
-            <div class="my-code">
-                Ваш код: <span id="my-code"></span>
-            </div>
-            <div class="connect-row">
-                <input type="text" id="remote-id-input" placeholder="Код собеседника">
-                <button id="connect-btn" class="btn">Подключиться</button>
-            </div>
-            <div id="status-text"></div>
+        <!-- Заголовок -->
+        <div class="chat-header">
+            <h1>Simple Chat</h1>
         </div>
 
-        <!-- Основная область чата -->
+        <!-- Панель подключения -->
+        <div id="connection-panel">
+            <div class="my-code-box">
+                <span class="label">Ваш код:</span>
+                <span id="my-code" class="code-value">—</span>
+                <button id="copy-code-btn" class="btn small" title="Копировать код">📋</button>
+                <button id="new-chat-btn" class="btn small danger" title="Новый код">🔄</button>
+            </div>
+            <div class="connect-row">
+                <input type="text" id="remote-id-input" placeholder="Введите код собеседника">
+                <button id="connect-btn" class="btn primary">Подключиться</button>
+            </div>
+            <div id="status-text" class="status-message"></div>
+        </div>
+
+        <!-- Сообщения -->
         <div id="messages-container"></div>
 
-        <!-- Панель ввода сообщения -->
+        <!-- Ввод сообщения -->
         <div id="input-panel">
-            <div id="message-input" contenteditable="true" placeholder="Сообщение..."></div>
-            <button id="send-btn" class="btn">Отправить</button>
+            <div id="message-input" contenteditable="true" placeholder="Введите сообщение..."></div>
+            <button id="send-btn" class="btn primary icon">➤</button>
         </div>
     </div>
 
