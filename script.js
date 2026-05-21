@@ -66,11 +66,12 @@
 
     // Инициализация Peer с индикацией статуса
     function initPeer(callback) {
+        // Если Peer уже готов, сразу вызываем callback
         if (myPeer && myPeer.id) {
             if (callback) callback(myPeer.id);
             return;
         }
-        // Если Peer уже создаётся, подождём
+        // Если Peer создаётся, подождём
         if (myPeer && !myPeer.id) {
             myPeer.on('open', (id) => {
                 if (callback) callback(id);
@@ -99,9 +100,13 @@
         });
 
         myPeer.on('error', (err) => {
+            console.error('Peer error:', err);
             statusMsg.classList.remove('hidden');
             statusMsg.textContent = 'Ошибка: ' + err.message;
-            console.error('Peer error:', err);
+            // Если чат открыт в ожидании, возвращаем на стартовый экран
+            if (!joinScreen.classList.contains('hidden') === false && chatActive === false) {
+                resetChat();
+            }
         });
     }
 
@@ -115,7 +120,8 @@
             setInputEnabled(true);
             loadMessageHistory(conn.peer);
             sendProfile();
-            partnerName.textContent = 'Подключение...';
+            partnerName.textContent = remoteProfile.name || 'Собеседник';
+            partnerAvatar.src = remoteProfile.avatar || '';
         });
         conn.on('data', handleData);
         conn.on('close', () => {
@@ -141,6 +147,10 @@
         partnerAvatar.src = '';
         partnerName.textContent = 'Собеседник';
         setInputEnabled(false);
+        // Убираем статус ошибки через 3 секунды
+        setTimeout(() => {
+            statusMsg.classList.add('hidden');
+        }, 3000);
     }
 
     function sendProfile() {
@@ -194,10 +204,10 @@
     }
 
     function renderMessages() {
-        // Очищаем только сообщения, сохраняя системные блоки
-        const oldSystem = document.querySelector('.system-message');
+        // Очищаем только сообщения, сохраняя системные блоки (waitingMsg)
+        const systemMsg = document.querySelector('.system-message');
         messagesContainer.innerHTML = '';
-        if (oldSystem) messagesContainer.appendChild(oldSystem);
+        if (systemMsg) messagesContainer.appendChild(systemMsg);
         messages.forEach(msg => {
             const wrapper = document.createElement('div');
             wrapper.className = `message-wrapper ${msg.sender}`;
@@ -352,19 +362,25 @@
     connectBtn.addEventListener('click', () => {
         const remoteId = remoteIdInput.value.trim();
         if (!remoteId) return;
+
+        // МГНОВЕННО открываем чат в режиме ожидания
+        joinScreen.classList.add('hidden');
+        chatScreen.classList.remove('hidden');
+        myCodeInChat.classList.add('hidden');
+        waitingMsg.textContent = 'Подключаемся...';
+        waitingMsg.classList.remove('hidden');
+        setInputEnabled(false);
+
+        // Инициализируем Peer и подключаемся
         initPeer(() => {
             if (conn) {
-                alert('Уже подключены');
+                // Уже подключены – просто активируем (на всякий случай)
+                chatActive = true;
+                waitingMsg.classList.add('hidden');
+                setInputEnabled(true);
                 return;
             }
             conn = myPeer.connect(remoteId, { reliable: true });
-            // Открываем чат сразу, но без активации
-            joinScreen.classList.add('hidden');
-            chatScreen.classList.remove('hidden');
-            myCodeInChat.classList.add('hidden');
-            waitingMsg.textContent = 'Подключаемся...';
-            waitingMsg.classList.remove('hidden');
-            setInputEnabled(false);
             setupConnection();
         });
     });
