@@ -16,13 +16,6 @@
     const copyCodeBtn = document.getElementById('copy-code-btn');
     const newChatBtn = document.getElementById('new-chat-btn');
 
-    // Блокировка / разблокировка ввода
-    function setInputEnabled(enabled) {
-        messageInput.contentEditable = enabled;
-        sendBtn.disabled = !enabled;
-        if (!enabled) messageInput.innerText = '';
-    }
-
     // Очистка и создание нового Peer
     function createNewPeer() {
         if (myPeer) {
@@ -37,7 +30,6 @@
         renderMessages();
         connectionPanel.style.display = 'block';
         statusText.textContent = 'Генерация нового кода...';
-        setInputEnabled(false);
         myCodeSpan.textContent = '—';
         initPeer();
     }
@@ -68,7 +60,6 @@
         conn.on('open', () => {
             chatActive = true;
             connectionPanel.style.display = 'none';
-            setInputEnabled(true);
             addSystemMessage('Собеседник подключился');
             loadHistory();
         });
@@ -104,7 +95,6 @@
         renderMessages();
         connectionPanel.style.display = 'block';
         statusText.textContent = 'Соединение разорвано. Можете начать новый чат.';
-        setInputEnabled(false);
     }
 
     function addSystemMessage(text) {
@@ -141,8 +131,12 @@
     }
 
     function sendMessage() {
+        if (!conn || !chatActive) {
+            alert('Нет соединения. Дождитесь подключения собеседника.');
+            return;
+        }
         const text = messageInput.innerText.trim();
-        if (!text || !conn || !chatActive) return;
+        if (!text) return;
         const msg = {
             id: Date.now() + Math.random().toString(36),
             text: text,
@@ -210,6 +204,6 @@
     });
 
     // Старт
-    setInputEnabled(false);
+    // Поле ввода всегда активно, ничего не блокируем
     initPeer();
 })();
