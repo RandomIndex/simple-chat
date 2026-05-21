@@ -23,10 +23,7 @@
                     <button id="connect-btn" class="btn secondary">Подключиться</button>
                 </div>
             </div>
-            <div id="my-id-display" class="id-display hidden">
-                Ваш код: <span id="my-id-text"></span>
-                <button id="copy-id-btn" class="btn small">Копировать</button>
-            </div>
+            <div id="status-msg" class="status-text hidden"></div>
             <button id="profile-btn-join" class="btn small profile-btn">Профиль</button>
         </div>
 
@@ -40,12 +37,18 @@
                 </div>
                 <button id="profile-btn-chat" class="btn icon">&#9881;</button>
             </div>
-            <div id="messages-container" class="messages"></div>
+            <div id="messages-container" class="messages">
+                <div id="waiting-msg" class="system-message hidden"></div>
+            </div>
             <div class="chat-input-area">
                 <label for="file-input" class="file-label">&#128206;</label>
                 <input type="file" id="file-input" accept="image/*" hidden>
                 <div id="message-input" contenteditable="true" placeholder="Сообщение..."></div>
                 <button id="send-btn" class="btn primary send-btn">&#10148;</button>
+            </div>
+            <div id="my-code-in-chat" class="code-banner hidden">
+                Ваш код: <span id="my-code-text"></span>
+                <button id="copy-code-in-chat-btn" class="btn small">Копировать</button>
             </div>
         </div>
 
