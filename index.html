@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Chat — Чистый чат</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <div id="chat-container">
+        <!-- Панель подключения (видна до установки связи) -->
+        <div id="connection-panel">
+            <div class="my-code">
+                Ваш код: <span id="my-code"></span>
+            </div>
+            <div class="connect-row">
+                <input type="text" id="remote-id-input" placeholder="Код собеседника">
+                <button id="connect-btn" class="btn">Подключиться</button>
+            </div>
+            <div id="status-text"></div>
+        </div>
+
+        <!-- Основная область чата -->
+        <div id="messages-container"></div>
+
+        <!-- Панель ввода сообщения -->
+        <div id="input-panel">
+            <div id="message-input" contenteditable="true" placeholder="Сообщение..."></div>
+            <button id="send-btn" class="btn">Отправить</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

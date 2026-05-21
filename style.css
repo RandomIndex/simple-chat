@@ -1,0 +1,180 @@
+:root {
+    --bg: #1e1e2e;
+    --surface: #2a2a3c;
+    --primary: #7289da;
+    --primary-hover: #5b6eae;
+    --text: #dcddde;
+    --text-secondary: #a0a0b0;
+    --msg-own: #3b4252;
+    --msg-peer: #434c5e;
+    --border: #404050;
+    --radius: 12px;
+    --radius-sm: 8px;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Segoe UI', Roboto, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#chat-container {
+    width: 100%;
+    max-width: 700px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+}
+
+@media (min-width: 600px) {
+    body {
+        padding: 20px;
+    }
+    #chat-container {
+        height: 90vh;
+        border-radius: var(--radius);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+}
+
+/* Панель подключения */
+#connection-panel {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+}
+
+.my-code {
+    text-align: center;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+}
+
+.my-code span {
+    font-weight: bold;
+    color: var(--primary);
+    user-select: all;
+}
+
+.connect-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.connect-row input {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+}
+
+#status-text {
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--primary);
+    min-height: 1.2em;
+}
+
+/* Кнопки */
+.btn {
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 8px 16px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    background: var(--primary);
+    color: white;
+    transition: background 0.2s;
+}
+.btn:hover {
+    background: var(--primary-hover);
+}
+
+/* Сообщения */
+#messages-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Панель ввода */
+#input-panel {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+}
+
+[contenteditable] {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    max-height: 100px;
+    overflow-y: auto;
+    outline: none;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+}
+[contenteditable]:empty:before {
+    content: attr(placeholder);
+    color: var(--text-secondary);
+}
+
+/* Стили сообщений */
+.message-wrapper {
+    display: flex;
+    flex-direction: column;
+    max-width: 80%;
+    word-wrap: break-word;
+}
+.message-wrapper.own {
+    align-self: flex-end;
+}
+.message-wrapper.peer {
+    align-self: flex-start;
+}
+.message-bubble {
+    padding: 8px 14px;
+    border-radius: 18px;
+    background: var(--msg-own);
+    color: var(--text);
+}
+.message-wrapper.peer .message-bubble {
+    background: var(--msg-peer);
+}
+.message-time {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    padding: 0 8px;
+}
+
+/* Системное сообщение (статус) */
+.system-message {
+    text-align: center;
+    color: var(--text-secondary);
+    font-style: italic;
+    padding: 4px 0;
+}
