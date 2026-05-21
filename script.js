@@ -1,209 +1,366 @@
-(function() {
-    let myPeer = null;
-    let conn = null;
-    let messages = [];
-    let chatActive = false;
+// Simple Chat – E2E шифрованный чат 1-на-1 через WebRTC (PeerJS)
+const CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const CODE_LENGTH = 12; // длина генерируемого кода
+const PBKDF2_ITERATIONS = 200000;
+const SALT = new TextEncoder().encode('SimpleChatSalt_v1');
 
-    // DOM
-    const messagesContainer = document.getElementById('messages-container');
-    const messageInput = document.getElementById('message-input');
-    const sendBtn = document.getElementById('send-btn');
-    const remoteIdInput = document.getElementById('remote-id-input');
-    const connectBtn = document.getElementById('connect-btn');
-    const myCodeSpan = document.getElementById('my-code');
-    const statusText = document.getElementById('status-text');
-    const connectionPanel = document.getElementById('connection-panel');
-    const copyCodeBtn = document.getElementById('copy-code-btn');
-    const newChatBtn = document.getElementById('new-chat-btn');
+// DOM элементы
+const loginScreen = document.getElementById('login-screen');
+const chatScreen = document.getElementById('chat-screen');
+const btnCreate = document.getElementById('btn-create');
+const btnJoin = document.getElementById('btn-join');
+const joinCodeInput = document.getElementById('join-code');
+const loginError = document.getElementById('login-error');
+const btnBack = document.getElementById('btn-back');
+const btnCopyCode = document.getElementById('btn-copy-code');
+const currentCodeSpan = document.getElementById('current-code');
+const messagesList = document.getElementById('messages-list');
+const messageInput = document.getElementById('message-input');
+const btnSend = document.getElementById('btn-send');
+const editBanner = document.getElementById('edit-banner');
+const btnCancelEdit = document.getElementById('btn-cancel-edit');
 
-    // Очистка и создание нового Peer
-    function createNewPeer() {
-        if (myPeer) {
-            myPeer.destroy();
+// Состояние
+let peer = null;          // PeerJS объект
+let conn = null;          // DataConnection
+let cryptoKey = null;     // CryptoKey для AES-GCM
+let roomCode = '';        // код комнаты (он же peerId)
+let myPeerId = '';
+let isConnected = false;
+let editingMsgId = null;  // id редактируемого сообщения
+let messageIdCounter = 0; // локальный счётчик id
+
+// ----- Генерация кода -----
+function generateCode() {
+    let code = '';
+    for (let i = 0; i < CODE_LENGTH; i++) {
+        code += CHARSET[Math.floor(Math.random() * CHARSET.length)];
+    }
+    return code;
+}
+
+// ----- Генерация id сообщения -----
+function generateMsgId() {
+    return `${myPeerId}-${Date.now()}-${messageIdCounter++}`;
+}
+
+// ----- Производные ключи из кода -----
+async function deriveKey(code) {
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        enc.encode(code),
+        'PBKDF2',
+        false,
+        ['deriveKey']
+    );
+    return crypto.subtle.deriveKey(
+        {
+            name: 'PBKDF2',
+            salt: SALT,
+            iterations: PBKDF2_ITERATIONS,
+            hash: 'SHA-256'
+        },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+}
+
+// ----- Шифрование / дешифрование -----
+async function encryptMessage(plainText) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const enc = new TextEncoder();
+    const ciphertext = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        cryptoKey,
+        enc.encode(plainText)
+    );
+    return { iv: Array.from(iv), ciphertext: Array.from(new Uint8Array(ciphertext)) };
+}
+
+async function decryptMessage(ivArray, ciphertextArray) {
+    const iv = new Uint8Array(ivArray);
+    const ciphertext = new Uint8Array(ciphertextArray);
+    const plainBuf = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        cryptoKey,
+        ciphertext
+    );
+    return new TextDecoder().decode(plainBuf);
+}
+
+// ----- Отображение сообщения -----
+function appendMessage({ id, text, own, edited = false }) {
+    const div = document.createElement('div');
+    div.className = `message ${own ? 'own' : ''}`;
+    div.dataset.msgId = id;
+    div.innerHTML = `
+        <div class="message-bubble">
+            <div class="text">${escapeHtml(text)}</div>
+            <div class="meta">
+                ${own ? '<button class="edit-btn" data-id="' + id + '">✎</button>' : ''}
+                ${edited ? '<span class="edited-mark">изменено</span>' : ''}
+            </div>
+        </div>
+    `;
+    messagesList.appendChild(div);
+    scrollToBottom();
+
+    // Навешиваем обработчик редактирования
+    if (own) {
+        div.querySelector('.edit-btn')?.addEventListener('click', (e) => {
+            const msgId = e.target.dataset.id;
+            startEdit(msgId);
+        });
+    }
+    return div;
+}
+
+function updateMessageText(id, newText) {
+    const el = document.querySelector(`.message[data-msg-id="${id}"]`);
+    if (!el) return;
+    const textEl = el.querySelector('.text');
+    if (textEl) textEl.textContent = newText;
+    const meta = el.querySelector('.meta');
+    if (meta && !meta.querySelector('.edited-mark')) {
+        const mark = document.createElement('span');
+        mark.className = 'edited-mark';
+        mark.textContent = 'изменено';
+        meta.appendChild(mark);
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function scrollToBottom() {
+    const container = document.getElementById('messages-container');
+    container.scrollTop = container.scrollHeight;
+}
+
+// ----- Редактирование -----
+function startEdit(msgId) {
+    // Найти текст
+    const el = document.querySelector(`.message[data-msg-id="${msgId}"] .text`);
+    if (!el) return;
+    editingMsgId = msgId;
+    messageInput.value = el.textContent;
+    messageInput.focus();
+    editBanner.classList.remove('hidden');
+    btnSend.textContent = '✎';
+}
+
+function cancelEdit() {
+    editingMsgId = null;
+    messageInput.value = '';
+    editBanner.classList.add('hidden');
+    btnSend.textContent = '➤';
+}
+
+// ----- Отправка сообщения / редактирования -----
+async function sendMessage() {
+    const text = messageInput.value.trim();
+    if (!text || !conn || !cryptoKey) return;
+
+    if (editingMsgId) {
+        // Отправляем пакет редактирования
+        const payload = { type: 'edit', id: editingMsgId, text };
+        const encrypted = await encryptMessage(JSON.stringify(payload));
+        conn.send(encrypted);
+        updateMessageText(editingMsgId, text);
+        cancelEdit();
+    } else {
+        const id = generateMsgId();
+        const payload = { type: 'message', id, text };
+        const encrypted = await encryptMessage(JSON.stringify(payload));
+        conn.send(encrypted);
+        appendMessage({ id, text, own: true });
+    }
+    messageInput.value = '';
+}
+
+// ----- Обработка входящих данных -----
+async function handleData(data) {
+    try {
+        const plainText = await decryptMessage(data.iv, data.ciphertext);
+        const obj = JSON.parse(plainText);
+        if (obj.type === 'message') {
+            appendMessage({ id: obj.id, text: obj.text, own: false });
+        } else if (obj.type === 'edit') {
+            updateMessageText(obj.id, obj.text);
         }
-        if (conn) {
-            conn.close();
-            conn = null;
+    } catch (err) {
+        console.error('Ошибка расшифровки:', err);
+    }
+}
+
+// ----- PeerJS подключение -----
+function initPeer(id) {
+    peer = new Peer(id, {
+        // debug: 2, // можно включить для отладки
+    });
+    myPeerId = id;
+
+    peer.on('open', (pid) => {
+        console.log('Peer открыт:', pid);
+        if (roomCode && !isConnected) {
+            // Если мы создатель – ждём входящего соединения
+            // Если присоединились – уже вызвали connectToRoom, тут ничего
         }
-        chatActive = false;
-        messages = [];
-        renderMessages();
-        connectionPanel.style.display = 'block';
-        statusText.textContent = 'Генерация нового кода...';
-        myCodeSpan.textContent = '—';
-        initPeer();
-    }
+    });
 
-    function initPeer() {
-        myPeer = new Peer();
+    peer.on('connection', (incomingConn) => {
+        if (conn && conn.open) {
+            incomingConn.close();
+            return;
+        }
+        setupConnection(incomingConn);
+    });
 
-        myPeer.on('open', (id) => {
-            myCodeSpan.textContent = id;
-            statusText.textContent = 'Ожидайте подключения собеседника';
-        });
+    peer.on('error', (err) => {
+        console.error('Peer error:', err);
+        if (loginScreen.classList.contains('active')) {
+            loginError.textContent = 'Ошибка соединения. Попробуйте другой код.';
+        }
+    });
 
-        myPeer.on('connection', (incomingConn) => {
-            if (conn) {
-                incomingConn.close();
-                return;
-            }
-            conn = incomingConn;
-            setupConnection();
-        });
+    peer.on('disconnected', () => {
+        // Пытаемся переподключиться
+        peer.reconnect();
+    });
+}
 
-        myPeer.on('error', (err) => {
-            statusText.textContent = 'Ошибка: ' + err.message;
-        });
-    }
+function connectToRoom(remoteId) {
+    if (!peer) return;
+    const newConn = peer.connect(remoteId, { reliable: true });
+    setupConnection(newConn);
+}
 
-    function setupConnection() {
-        conn.on('open', () => {
-            chatActive = true;
-            connectionPanel.style.display = 'none';
-            addSystemMessage('Собеседник подключился');
-            loadHistory();
-        });
+function setupConnection(connection) {
+    conn = connection;
+    conn.on('open', () => {
+        isConnected = true;
+        console.log('Соединение установлено');
+        // Очищаем сообщения
+        messagesList.innerHTML = '';
+        // Если мы присоединились (remote peer), показываем чат
+        showChatScreen();
+    });
 
-        conn.on('data', (data) => {
-            if (data.type === 'message') {
-                const msg = {
-                    id: data.id,
-                    text: data.text,
-                    sender: 'peer',
-                    timestamp: data.timestamp
-                };
-                addMessage(msg);
-            }
-        });
+    conn.on('data', (data) => {
+        handleData(data);
+    });
 
-        conn.on('close', () => {
-            addSystemMessage('Собеседник отключился');
-            resetChat();
-        });
-
-        conn.on('error', () => {
-            addSystemMessage('Ошибка соединения');
-            resetChat();
-        });
-    }
-
-    function resetChat() {
-        if (conn) conn.close();
+    conn.on('close', () => {
+        isConnected = false;
         conn = null;
-        chatActive = false;
-        messages = [];
-        renderMessages();
-        connectionPanel.style.display = 'block';
-        statusText.textContent = 'Соединение разорвано. Можете начать новый чат.';
-    }
-
-    function addSystemMessage(text) {
-        const div = document.createElement('div');
-        div.className = 'system-message';
-        div.textContent = text;
-        messagesContainer.appendChild(div);
-        scrollToBottom();
-    }
-
-    function addMessage(msg) {
-        messages.push(msg);
-        renderMessages();
-        saveHistory();
-    }
-
-    function renderMessages() {
-        messagesContainer.innerHTML = '';
-        messages.forEach(msg => {
-            const wrapper = document.createElement('div');
-            wrapper.className = `message-wrapper ${msg.sender}`;
-            const bubble = document.createElement('div');
-            bubble.className = 'message-bubble';
-            bubble.textContent = msg.text;
-            wrapper.appendChild(bubble);
-            const timeDiv = document.createElement('div');
-            timeDiv.className = 'message-time';
-            const time = new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-            timeDiv.textContent = time;
-            wrapper.appendChild(timeDiv);
-            messagesContainer.appendChild(wrapper);
-        });
-        scrollToBottom();
-    }
-
-    function sendMessage() {
-        if (!conn || !chatActive) {
-            alert('Нет соединения. Дождитесь подключения собеседника.');
-            return;
-        }
-        const text = messageInput.innerText.trim();
-        if (!text) return;
-        const msg = {
-            id: Date.now() + Math.random().toString(36),
-            text: text,
-            sender: 'own',
-            timestamp: Date.now()
-        };
-        conn.send({ type: 'message', ...msg });
-        addMessage(msg);
-        messageInput.innerText = '';
-    }
-
-    function saveHistory() {
-        if (!conn) return;
-        localStorage.setItem('chat_history_' + conn.peer, JSON.stringify(messages));
-    }
-
-    function loadHistory() {
-        if (!conn) return;
-        const saved = localStorage.getItem('chat_history_' + conn.peer);
-        if (saved) {
-            try {
-                messages = JSON.parse(saved);
-                renderMessages();
-            } catch(e) {}
-        }
-    }
-
-    function scrollToBottom() {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-
-    // Обработчики
-    connectBtn.addEventListener('click', () => {
-        const remoteId = remoteIdInput.value.trim();
-        if (!remoteId) return;
-        if (conn) {
-            alert('Вы уже подключены. Начните новый чат, чтобы сменить собеседника.');
-            return;
-        }
-        conn = myPeer.connect(remoteId, { reliable: true });
-        setupConnection();
+        // Возвращаем на экран входа?
+        appendSystemMessage('Собеседник отключился.');
     });
 
-    copyCodeBtn.addEventListener('click', () => {
-        const code = myCodeSpan.textContent;
-        if (!code || code === '—') return;
-        navigator.clipboard.writeText(code).then(() => {
-            copyCodeBtn.textContent = '✅';
-            setTimeout(() => { copyCodeBtn.textContent = '📋'; }, 1500);
-        });
+    conn.on('error', (err) => {
+        console.error('Connection error:', err);
+        appendSystemMessage('Ошибка соединения.');
     });
+}
 
-    newChatBtn.addEventListener('click', () => {
-        if (confirm('Начать новый чат? Текущее соединение будет разорвано.')) {
-            createNewPeer();
+function appendSystemMessage(text) {
+    const div = document.createElement('div');
+    div.style.textAlign = 'center';
+    div.style.color = '#72767d';
+    div.style.fontSize = '12px';
+    div.style.margin = '8px 0';
+    div.textContent = text;
+    messagesList.appendChild(div);
+    scrollToBottom();
+}
+
+function showChatScreen() {
+    loginScreen.classList.remove('active');
+    chatScreen.classList.add('active');
+    currentCodeSpan.textContent = roomCode;
+    messageInput.focus();
+}
+
+function showLoginScreen() {
+    chatScreen.classList.remove('active');
+    loginScreen.classList.add('active');
+    // Закрыть соединения
+    if (conn) {
+        conn.close();
+        conn = null;
+    }
+    if (peer) {
+        peer.destroy();
+        peer = null;
+    }
+    isConnected = false;
+    roomCode = '';
+    cryptoKey = null;
+    joinCodeInput.value = '';
+    loginError.textContent = '';
+}
+
+// ----- Обработчики UI -----
+btnCreate.addEventListener('click', async () => {
+    loginError.textContent = '';
+    const code = generateCode();
+    roomCode = code;
+    cryptoKey = await deriveKey(code);
+    initPeer(code); // peerId = code
+    showChatScreen();
+});
+
+btnJoin.addEventListener('click', async () => {
+    loginError.textContent = '';
+    const code = joinCodeInput.value.trim();
+    if (!code) {
+        loginError.textContent = 'Введите код комнаты';
+        return;
+    }
+    roomCode = code;
+    cryptoKey = await deriveKey(code);
+    // Генерируем себе случайный peerId, чтобы не совпадать с кодом (код - id создателя)
+    const randomId = generateCode() + '-guest';
+    initPeer(randomId);
+    // Чуть подождём открытия peer и подключимся
+    setTimeout(() => {
+        if (peer && peer.id) {
+            connectToRoom(code);
+        } else {
+            loginError.textContent = 'Не удалось инициализировать peer';
         }
-    });
+    }, 600);
+});
 
-    sendBtn.addEventListener('click', sendMessage);
-    messageInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    });
+btnBack.addEventListener('click', showLoginScreen);
 
-    // Старт
-    // Поле ввода всегда активно, ничего не блокируем
-    initPeer();
-})();
+btnCopyCode.addEventListener('click', () => {
+    navigator.clipboard.writeText(roomCode).then(() => {
+        alert('Код скопирован!');
+    }).catch(() => {
+        prompt('Код комнаты (скопируйте вручную):', roomCode);
+    });
+});
+
+btnSend.addEventListener('click', sendMessage);
+
+messageInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+});
+
+btnCancelEdit.addEventListener('click', cancelEdit);
+
+// Автоувеличение высоты textarea
+messageInput.addEventListener('input', () => {
+    messageInput.style.height = 'auto';
+    messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+});

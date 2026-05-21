@@ -3,42 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Chat — Чистый чат</title>
+    <title>Simple Chat</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
 </head>
 <body>
-    <div id="chat-container">
-        <!-- Заголовок -->
-        <div class="chat-header">
-            <h1>Simple Chat</h1>
+    <div id="app">
+        <!-- Экран входа -->
+        <div id="login-screen" class="screen active">
+            <div class="login-box">
+                <h1>Simple Chat</h1>
+                <p>Приватный шифрованный чат 1‑на‑1</p>
+                <div class="actions">
+                    <button id="btn-create">Создать чат</button>
+                    <div class="separator">или</div>
+                    <div class="join-group">
+                        <input id="join-code" type="text" placeholder="Код комнаты" maxlength="20" autocomplete="off">
+                        <button id="btn-join">Войти</button>
+                    </div>
+                </div>
+                <div id="login-error" class="error"></div>
+            </div>
         </div>
 
-        <!-- Панель подключения -->
-        <div id="connection-panel">
-            <div class="my-code-box">
-                <span class="label">Ваш код:</span>
-                <span id="my-code" class="code-value">—</span>
-                <button id="copy-code-btn" class="btn small" title="Копировать код">📋</button>
-                <button id="new-chat-btn" class="btn small danger" title="Новый код">🔄</button>
+        <!-- Экран чата -->
+        <div id="chat-screen" class="screen">
+            <div class="chat-header">
+                <button id="btn-back" class="btn-icon">←</button>
+                <div class="chat-info">
+                    <span class="chat-title">Комната</span>
+                    <span class="chat-code" id="current-code">—</span>
+                </div>
+                <button id="btn-copy-code" class="btn-icon" title="Скопировать код">📋</button>
             </div>
-            <div class="connect-row">
-                <input type="text" id="remote-id-input" placeholder="Введите код собеседника">
-                <button id="connect-btn" class="btn primary">Подключиться</button>
+            <div id="messages-container" class="messages-container">
+                <div id="messages-list"></div>
             </div>
-            <div id="status-text" class="status-message"></div>
-        </div>
-
-        <!-- Сообщения -->
-        <div id="messages-container"></div>
-
-        <!-- Ввод сообщения -->
-        <div id="input-panel">
-            <div id="message-input" contenteditable="true" placeholder="Введите сообщение..."></div>
-            <button id="send-btn" class="btn primary icon">➤</button>
+            <div class="input-area">
+                <div id="edit-banner" class="edit-banner hidden">
+                    <span>Редактирование</span>
+                    <button id="btn-cancel-edit" class="btn-small">Отмена</button>
+                </div>
+                <div class="input-row">
+                    <textarea id="message-input" rows="1" placeholder="Сообщение..." autofocus></textarea>
+                    <button id="btn-send" class="btn-send">➤</button>
+                </div>
+            </div>
         </div>
     </div>
 
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
