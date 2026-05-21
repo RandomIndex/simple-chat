@@ -10,8 +10,9 @@
     };
     let remoteProfile = { name: 'Собеседник', avatar: '' };
     let currentPeerId = null;
+    let chatActive = false; // true когда соединение установлено
 
-    // Загрузка локального профиля из localStorage
+    // Загрузка локального профиля
     function loadProfile() {
         const saved = localStorage.getItem('simplechat_profile');
         if (saved) {
@@ -31,11 +32,10 @@
     const createBtn = document.getElementById('create-btn');
     const connectBtn = document.getElementById('connect-btn');
     const remoteIdInput = document.getElementById('remote-id-input');
-    const myIdDisplay = document.getElementById('my-id-display');
-    const myIdText = document.getElementById('my-id-text');
-    const copyIdBtn = document.getElementById('copy-id-btn');
+    const statusMsg = document.getElementById('status-msg');
     const backBtn = document.getElementById('back-btn');
     const messagesContainer = document.getElementById('messages-container');
+    const waitingMsg = document.getElementById('waiting-msg');
     const messageInput = document.getElementById('message-input');
     const sendBtn = document.getElementById('send-btn');
     const fileInput = document.getElementById('file-input');
@@ -50,18 +50,45 @@
     const saveProfileBtn = document.getElementById('save-profile-btn');
     const partnerAvatar = document.getElementById('partner-avatar');
     const partnerName = document.getElementById('partner-name');
+    const myCodeInChat = document.getElementById('my-code-in-chat');
+    const myCodeText = document.getElementById('my-code-text');
+    const copyCodeInChatBtn = document.getElementById('copy-code-in-chat-btn');
 
-    // Инициализация Peer
+    // Отключение/включение элементов ввода
+    function setInputEnabled(enabled) {
+        messageInput.contentEditable = enabled;
+        sendBtn.disabled = !enabled;
+        fileInput.disabled = !enabled;
+        if (!enabled) {
+            messageInput.innerText = '';
+        }
+    }
+
+    // Инициализация Peer с индикацией статуса
     function initPeer(callback) {
-        if (myPeer) {
+        if (myPeer && myPeer.id) {
             if (callback) callback(myPeer.id);
             return;
         }
+        // Если Peer уже создаётся, подождём
+        if (myPeer && !myPeer.id) {
+            myPeer.on('open', (id) => {
+                if (callback) callback(id);
+            });
+            return;
+        }
+
+        statusMsg.classList.remove('hidden');
+        statusMsg.textContent = 'Подключение к сети...';
         myPeer = new Peer();
+
         myPeer.on('open', (id) => {
             currentPeerId = id;
+            statusMsg.textContent = 'Сеть готова';
+            setTimeout(() => statusMsg.classList.add('hidden'), 2000);
             if (callback) callback(id);
         });
+
         myPeer.on('connection', (incomingConn) => {
             if (conn) {
                 incomingConn.close();
@@ -70,8 +97,11 @@
             conn = incomingConn;
             setupConnection();
         });
+
         myPeer.on('error', (err) => {
-            alert('Ошибка подключения: ' + err);
+            statusMsg.classList.remove('hidden');
+            statusMsg.textContent = 'Ошибка: ' + err.message;
+            console.error('Peer error:', err);
         });
     }
 
@@ -79,10 +109,13 @@
     function setupConnection() {
         conn.on('open', () => {
             console.log('Соединение установлено');
-            joinScreen.classList.add('hidden');
-            chatScreen.classList.remove('hidden');
+            chatActive = true;
+            waitingMsg.classList.add('hidden');
+            myCodeInChat.classList.add('hidden');
+            setInputEnabled(true);
             loadMessageHistory(conn.peer);
-            sendProfile(); // отправляем свой профиль при подключении
+            sendProfile();
+            partnerName.textContent = 'Подключение...';
         });
         conn.on('data', handleData);
         conn.on('close', () => {
@@ -98,18 +131,20 @@
     function resetChat() {
         if (conn) conn.close();
         conn = null;
+        chatActive = false;
         messages = [];
         renderMessages();
         chatScreen.classList.add('hidden');
         joinScreen.classList.remove('hidden');
-        myIdDisplay.classList.add('hidden');
+        myCodeInChat.classList.add('hidden');
         remoteProfile = { name: 'Собеседник', avatar: '' };
         partnerAvatar.src = '';
         partnerName.textContent = 'Собеседник';
+        setInputEnabled(false);
     }
 
     function sendProfile() {
-        if (!conn) return;
+        if (!conn || !chatActive) return;
         conn.send({
             type: 'profile',
             profile: localProfile
@@ -159,7 +194,10 @@
     }
 
     function renderMessages() {
+        // Очищаем только сообщения, сохраняя системные блоки
+        const oldSystem = document.querySelector('.system-message');
         messagesContainer.innerHTML = '';
+        if (oldSystem) messagesContainer.appendChild(oldSystem);
         messages.forEach(msg => {
             const wrapper = document.createElement('div');
             wrapper.className = `message-wrapper ${msg.sender}`;
@@ -223,7 +261,7 @@
         if (!msg) return;
         msg.text = newText;
         msg.edited = true;
-        if (conn) {
+        if (conn && chatActive) {
             conn.send({
                 type: 'edit',
                 id: msgId,
@@ -236,7 +274,7 @@
 
     function sendMessage() {
         const text = messageInput.innerText.trim();
-        if (!text || !conn) return;
+        if (!text || !conn || !chatActive) return;
         const msg = {
             id: Date.now() + Math.random().toString(36),
             text: text,
@@ -254,7 +292,7 @@
     }
 
     function sendImage(file) {
-        if (!conn) return;
+        if (!conn || !chatActive) return;
         const reader = new FileReader();
         reader.onload = (e) => {
             const msg = {
@@ -293,11 +331,21 @@
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 
+    // Функция открытия чата после генерации кода
+    function openChatWithCode(code) {
+        joinScreen.classList.add('hidden');
+        chatScreen.classList.remove('hidden');
+        myCodeInChat.classList.remove('hidden');
+        myCodeText.textContent = code;
+        waitingMsg.textContent = 'Ожидаем подключения собеседника...';
+        waitingMsg.classList.remove('hidden');
+        setInputEnabled(false);
+    }
+
     // UI действия
     createBtn.addEventListener('click', () => {
         initPeer((id) => {
-            myIdText.textContent = id;
-            myIdDisplay.classList.remove('hidden');
+            openChatWithCode(id);
         });
     });
 
@@ -310,14 +358,21 @@
                 return;
             }
             conn = myPeer.connect(remoteId, { reliable: true });
+            // Открываем чат сразу, но без активации
+            joinScreen.classList.add('hidden');
+            chatScreen.classList.remove('hidden');
+            myCodeInChat.classList.add('hidden');
+            waitingMsg.textContent = 'Подключаемся...';
+            waitingMsg.classList.remove('hidden');
+            setInputEnabled(false);
             setupConnection();
         });
     });
 
-    copyIdBtn.addEventListener('click', () => {
+    copyCodeInChatBtn.addEventListener('click', () => {
         navigator.clipboard.writeText(currentPeerId).then(() => {
-            copyIdBtn.textContent = 'Скопировано!';
-            setTimeout(() => copyIdBtn.textContent = 'Копировать', 2000);
+            copyCodeInChatBtn.textContent = 'Скопировано!';
+            setTimeout(() => copyCodeInChatBtn.textContent = 'Копировать', 2000);
         });
     });
 
@@ -371,7 +426,7 @@
         localProfile.status = profileStatus.value.trim();
         localStorage.setItem('simplechat_profile', JSON.stringify(localProfile));
         profileModal.classList.add('hidden');
-        if (conn) sendProfile();
+        if (conn && chatActive) sendProfile();
     });
 
 })();

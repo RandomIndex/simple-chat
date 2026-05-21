@@ -102,17 +102,12 @@ body {
     color: var(--text);
     outline: none;
 }
-.id-display {
+
+.status-text {
     margin-top: 20px;
     text-align: center;
-    background: var(--bg);
-    padding: 10px;
-    border-radius: var(--radius-sm);
-}
-.id-display span {
-    font-weight: bold;
     color: var(--primary);
-    user-select: all;
+    font-weight: 500;
 }
 
 /* Buttons */
@@ -172,6 +167,29 @@ body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+.system-message {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 20px;
+    font-style: italic;
+}
+.code-banner {
+    background: var(--bg);
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    text-align: center;
+    margin-top: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 0.9rem;
+}
+.code-banner span {
+    font-weight: bold;
+    color: var(--primary);
+    user-select: all;
 }
 .chat-input-area {
     display: flex;
