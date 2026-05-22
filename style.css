@@ -1,4 +1,3 @@
-/* Стиль Telegram / Discord - тёмная тема */
 * {
     margin: 0;
     padding: 0;
@@ -6,283 +5,354 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    background: #1e1e2e;
-    color: #dcddde;
+    font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+    background: #0e0e10;
+    color: #e4e6eb;
     height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-#app {
-    width: 100%;
-    max-width: 480px;
-    height: 90vh;
-    max-height: 800px;
-    background: #2f3136;
-    border-radius: 16px;
-    box-shadow: 0 0 30px rgba(0,0,0,0.4);
     overflow: hidden;
-    display: flex;
-    flex-direction: column;
 }
 
+/* Общие экраны */
 .screen {
     display: none;
     flex-direction: column;
     height: 100%;
+    width: 100%;
+    max-width: 1000px;
+    margin: 0 auto;
+    background: #1e1e1e;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
 }
 
 .screen.active {
     display: flex;
 }
 
-/* Экран входа */
-.login-box {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+/* Стартовый экран */
+#startScreen {
     justify-content: center;
-    height: 100%;
-    padding: 20px;
-    gap: 24px;
-    background: #36393f;
+    align-items: center;
+    background: #1e1e1e;
 }
 
-.login-box h1 {
-    font-size: 32px;
-    color: #fff;
-    margin: 0;
-}
-
-.login-box p {
-    color: #b9bbbe;
-    font-size: 14px;
+.card {
+    background: #2c2c2f;
+    border-radius: 28px;
+    padding: 2rem 1.8rem;
+    width: 90%;
+    max-width: 440px;
     text-align: center;
-    margin: 0;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
 }
 
-.actions {
+.card h1 {
+    font-size: 1.9rem;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, #5e9bff, #8f6eff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.card p {
+    color: #aaa;
+    margin-bottom: 1.8rem;
+}
+
+.input-group {
     display: flex;
-    flex-direction: column;
-    gap: 16px;
-    width: 100%;
-    max-width: 280px;
+    gap: 10px;
+    margin-bottom: 1.2rem;
 }
 
-button {
-    background: #5865f2;
+#roomCodeInput {
+    flex: 1;
+    background: #3a3a3d;
+    border: none;
+    padding: 12px 16px;
+    border-radius: 40px;
     color: white;
-    border: none;
-    padding: 12px;
-    border-radius: 8px;
-    font-size: 16px;
-    cursor: pointer;
-    transition: background 0.2s;
-}
-
-button:hover {
-    background: #4752c4;
-}
-
-button.btn-icon {
-    background: transparent;
-    padding: 8px 12px;
-    font-size: 18px;
-}
-
-button.btn-small {
-    background: #4e5058;
-    padding: 6px 10px;
-    font-size: 12px;
-}
-
-.separator {
-    text-align: center;
-    color: #72767d;
-    font-size: 14px;
-    margin: 8px 0;
-}
-
-.join-group {
-    display: flex;
-    gap: 8px;
-}
-
-input, textarea {
-    background: #40444b;
-    border: none;
-    color: #dcddde;
-    padding: 10px 12px;
-    border-radius: 8px;
-    font-size: 14px;
+    font-size: 1rem;
     outline: none;
 }
 
-input:focus, textarea:focus {
-    box-shadow: 0 0 0 2px #5865f2;
+#roomCodeInput:focus {
+    outline: 2px solid #5e9bff;
 }
 
-#join-code {
-    flex: 1;
-}
-
-.error {
-    color: #f04747;
-    font-size: 13px;
-    min-height: 20px;
-    text-align: center;
-}
-
-/* Шапка чата */
-.chat-header {
-    display: flex;
-    align-items: center;
-    padding: 12px 16px;
-    background: #36393f;
-    border-bottom: 1px solid #26262b;
-    gap: 12px;
-}
-
-.chat-info {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
-
-.chat-title {
+.btn-primary, .btn-secondary {
+    border: none;
+    padding: 10px 20px;
+    border-radius: 40px;
     font-weight: 600;
-    font-size: 16px;
-    color: #fff;
+    cursor: pointer;
+    transition: 0.2s;
+    font-size: 0.95rem;
 }
 
-.chat-code {
-    font-size: 12px;
-    color: #b9bbbe;
-    word-break: break-all;
-}
-
-/* Сообщения */
-.messages-container {
-    flex: 1;
-    overflow-y: auto;
-    padding: 16px;
-    background: #313338;
-}
-
-.message {
-    display: flex;
-    margin-bottom: 12px;
-    animation: fadeIn 0.15s ease;
-}
-
-.message.own {
-    justify-content: flex-end;
-}
-
-.message-bubble {
-    max-width: 75%;
-    padding: 8px 14px;
-    border-radius: 16px;
-    background: #40444b;
-    color: #dcddde;
-    position: relative;
-    word-wrap: break-word;
-    white-space: pre-wrap;
-}
-
-.own .message-bubble {
-    background: #5865f2;
+.btn-primary {
+    background: #2b5278;
     color: white;
 }
 
-.message-bubble .text {
-    font-size: 14px;
+.btn-primary:hover {
+    background: #3a6b9a;
 }
 
-.message-bubble .meta {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 4px;
-    margin-top: 2px;
-    font-size: 10px;
-    color: #9b9b9b;
+.btn-secondary {
+    background: #3a3a3d;
+    color: #ddd;
 }
 
-.own .meta {
-    color: #c3c7ff;
+.btn-secondary:hover {
+    background: #4a4a4e;
 }
 
-.edit-btn {
-    background: none;
-    border: none;
-    color: inherit;
-    cursor: pointer;
-    font-size: 10px;
-    padding: 0 2px;
-    opacity: 0.6;
+.divider {
+    margin: 1rem 0;
+    color: #666;
+    font-size: 0.8rem;
 }
 
-.edit-btn:hover {
-    opacity: 1;
+.error-msg {
+    color: #ff8888;
+    margin-top: 1rem;
+    font-size: 0.85rem;
 }
 
-.edited-mark {
-    font-style: italic;
-}
-
-/* Область ввода */
-.input-area {
-    background: #36393f;
-    border-top: 1px solid #26262b;
-    padding: 10px 16px;
-}
-
-.edit-banner {
+/* Экран чата */
+.chat-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #4e5058;
-    padding: 4px 10px;
-    border-radius: 6px;
-    margin-bottom: 8px;
-    font-size: 12px;
-    color: #b9bbbe;
+    padding: 12px 16px;
+    background: #252527;
+    border-bottom: 1px solid #3e3e42;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.room-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #1e1e1e;
+    padding: 6px 12px;
+    border-radius: 40px;
+    font-size: 0.9rem;
+}
+
+.room-code-label {
+    color: #aaa;
+}
+
+.room-code {
+    font-family: monospace;
+    font-weight: bold;
+    letter-spacing: 1px;
+    background: #00000055;
+    padding: 4px 8px;
+    border-radius: 20px;
+}
+
+.icon-btn, .exit-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 6px;
+    border-radius: 50%;
+    transition: 0.2s;
+    color: #ccc;
+}
+
+.icon-btn:hover, .exit-btn:hover {
+    background: #3a3a3f;
+}
+
+.messages-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    scroll-behavior: smooth;
+}
+
+.empty-chat-placeholder {
+    text-align: center;
+    color: #6c6c70;
+    margin-top: 40px;
+    font-style: italic;
+}
+
+/* Пузыри сообщений */
+.message {
+    display: flex;
+    max-width: 80%;
+    animation: fadeInUp 0.2s ease;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.message.own {
+    align-self: flex-end;
+    justify-content: flex-end;
+}
+
+.message.other {
+    align-self: flex-start;
+}
+
+.bubble {
+    padding: 10px 14px;
+    border-radius: 20px;
+    word-wrap: break-word;
+    max-width: 100%;
+    position: relative;
+}
+
+.own .bubble {
+    background: #2b5278;
+    border-bottom-right-radius: 4px;
+    color: white;
+}
+
+.other .bubble {
+    background: #2c2c2f;
+    border-bottom-left-radius: 4px;
+    color: #e4e6eb;
+}
+
+.message-time {
+    font-size: 0.65rem;
+    opacity: 0.7;
+    margin-top: 4px;
+    text-align: right;
+}
+
+.message-edited {
+    font-size: 0.6rem;
+    margin-left: 6px;
+    opacity: 0.7;
+}
+
+.avatar {
+    width: 32px;
+    height: 32px;
+    background: #5e5e66;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.other .avatar {
+    background: #3a6b9a;
+}
+
+.message-input-area {
+    display: flex;
+    padding: 12px 16px;
+    background: #252527;
+    gap: 10px;
+    border-top: 1px solid #3e3e42;
+}
+
+#messageInput {
+    flex: 1;
+    background: #3a3a3d;
+    border: none;
+    border-radius: 24px;
+    padding: 12px 16px;
+    color: white;
+    font-size: 0.95rem;
+    resize: none;
+    font-family: inherit;
+    outline: none;
+    max-height: 100px;
+}
+
+.send-btn {
+    background: #2b5278;
+    border: none;
+    border-radius: 40px;
+    width: 48px;
+    font-size: 1.4rem;
+    cursor: pointer;
+    transition: 0.2s;
+    color: white;
+}
+
+.send-btn:hover {
+    background: #3a6b9a;
+}
+
+.status-bar {
+    font-size: 0.7rem;
+    padding: 4px 12px;
+    text-align: center;
+    color: #8c8c92;
+    background: #1e1e1e;
+    border-top: 1px solid #2c2c2f;
+}
+
+/* Toast уведомления */
+.toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #323236;
+    color: white;
+    padding: 8px 18px;
+    border-radius: 40px;
+    font-size: 0.85rem;
+    z-index: 1000;
+    backdrop-filter: blur(8px);
+    white-space: nowrap;
+    pointer-events: none;
+    transition: 0.2s;
+}
+
+.toast.hidden {
+    opacity: 0;
+    visibility: hidden;
+}
+
+/* Адаптив */
+@media (max-width: 600px) {
+    .message {
+        max-width: 90%;
+    }
+    .chat-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .room-info {
+        justify-content: center;
+    }
+    .exit-btn {
+        align-self: center;
+    }
+    .card {
+        padding: 1.5rem;
+    }
 }
 
 .hidden {
     display: none;
-}
-
-.input-row {
-    display: flex;
-    gap: 8px;
-    align-items: flex-end;
-}
-
-#message-input {
-    flex: 1;
-    resize: none;
-    min-height: 40px;
-    max-height: 120px;
-    font-family: inherit;
-}
-
-.btn-send {
-    background: #5865f2;
-    border-radius: 50%;
-    width: 42px;
-    height: 42px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    font-size: 18px;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: none; }
 }

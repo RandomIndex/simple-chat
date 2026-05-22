@@ -1,66 +1,146 @@
-// Simple Chat – E2E шифрованный чат 1-на-1 через WebRTC (PeerJS)
-const CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-const CODE_LENGTH = 12; // длина генерируемого кода
-const PBKDF2_ITERATIONS = 200000;
-const SALT = new TextEncoder().encode('SimpleChatSalt_v1');
+// ======================== КОНФИГУРАЦИЯ ИЗ token.js ========================
+if (typeof GITHUB_TOKEN === 'undefined' || typeof GITHUB_OWNER === 'undefined' || typeof GITHUB_REPO === 'undefined') {
+    alert('Ошибка: файл token.js не настроен. Создайте его по примеру token.example.js и укажите токен, владельца и репозиторий.');
+    throw new Error('Missing GitHub config');
+}
+
+const API_BASE = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/chat-db.json`;
+let currentSha = null;           // SHA файла chat-db.json
+let pollingInterval = null;
+let currentRoom = null;          // текущий код комнаты
+let currentKey = null;           // CryptoKey для текущей комнаты
+let currentSalt = null;          // соль комнаты (Uint8Array)
+let messagesList = [];           // расшифрованные сообщения для UI
+let senderId = localStorage.getItem('senderId');
+if (!senderId) {
+    senderId = crypto.randomUUID();
+    localStorage.setItem('senderId', senderId);
+}
+let lastStoredRoom = localStorage.getItem('lastRoom') || '';
+let isEditing = false;
+let editingMsgId = null;
 
 // DOM элементы
-const loginScreen = document.getElementById('login-screen');
-const chatScreen = document.getElementById('chat-screen');
-const btnCreate = document.getElementById('btn-create');
-const btnJoin = document.getElementById('btn-join');
-const joinCodeInput = document.getElementById('join-code');
-const loginError = document.getElementById('login-error');
-const btnBack = document.getElementById('btn-back');
-const btnCopyCode = document.getElementById('btn-copy-code');
-const currentCodeSpan = document.getElementById('current-code');
-const messagesList = document.getElementById('messages-list');
-const messageInput = document.getElementById('message-input');
-const btnSend = document.getElementById('btn-send');
-const editBanner = document.getElementById('edit-banner');
-const btnCancelEdit = document.getElementById('btn-cancel-edit');
+const startScreen = document.getElementById('startScreen');
+const chatScreen = document.getElementById('chatScreen');
+const roomCodeInput = document.getElementById('roomCodeInput');
+const joinBtn = document.getElementById('joinBtn');
+const createBtn = document.getElementById('createBtn');
+const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+const copyCodeBtn = document.getElementById('copyCodeBtn');
+const exitBtn = document.getElementById('exitBtn');
+const messagesContainer = document.getElementById('messagesContainer');
+const messageInput = document.getElementById('messageInput');
+const sendBtn = document.getElementById('sendBtn');
+const statusBar = document.getElementById('statusBar');
+const toastEl = document.getElementById('toast');
+const startError = document.getElementById('startError');
 
-// Состояние
-let peer = null;          // PeerJS объект
-let conn = null;          // DataConnection
-let cryptoKey = null;     // CryptoKey для AES-GCM
-let roomCode = '';        // код комнаты (он же peerId)
-let myPeerId = '';
-let isConnected = false;
-let editingMsgId = null;  // id редактируемого сообщения
-let messageIdCounter = 0; // локальный счётчик id
+// Вспомогательные функции
+function showToast(msg, duration = 2000) {
+    toastEl.textContent = msg;
+    toastEl.classList.remove('hidden');
+    setTimeout(() => toastEl.classList.add('hidden'), duration);
+}
 
-// ----- Генерация кода -----
-function generateCode() {
+function setStatus(msg, isError = false) {
+    statusBar.textContent = msg;
+    statusBar.style.color = isError ? '#ff8888' : '#8c8c92';
+    setTimeout(() => {
+        if (statusBar.textContent === msg) statusBar.style.color = '#8c8c92';
+    }, 3000);
+}
+
+// Генерация кода комнаты (8 символов, буквы+цифры)
+function generateRoomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
     let code = '';
-    for (let i = 0; i < CODE_LENGTH; i++) {
-        code += CHARSET[Math.floor(Math.random() * CHARSET.length)];
+    for (let i = 0; i < 8; i++) {
+        code += chars[Math.floor(Math.random() * chars.length)];
     }
     return code;
 }
 
-// ----- Генерация id сообщения -----
-function generateMsgId() {
-    return `${myPeerId}-${Date.now()}-${messageIdCounter++}`;
+// Копирование в буфер
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => showToast(`Код "${text}" скопирован`));
 }
 
-// ----- Производные ключи из кода -----
-async function deriveKey(code) {
+// ======================== РАБОТА С GITHUB API ========================
+async function fetchDB() {
+    try {
+        const res = await fetch(API_BASE, {
+            headers: { 'Authorization': `token ${GITHUB_TOKEN}`, 'Accept': 'application/vnd.github.v3+json' }
+        });
+        if (res.status === 404) {
+            return { data: { rooms: {} }, sha: null };
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const content = atob(json.content);
+        const data = JSON.parse(content);
+        return { data, sha: json.sha };
+    } catch (err) {
+        console.error('fetchDB error', err);
+        throw new Error('Не удалось загрузить базу данных');
+    }
+}
+
+async function putDB(newData, expectedSha) {
+    const contentBase64 = btoa(JSON.stringify(newData, null, 2));
+    const body = {
+        message: `Update chat: ${new Date().toISOString()}`,
+        content: contentBase64,
+        sha: expectedSha || undefined
+    };
+    const res = await fetch(API_BASE, {
+        method: 'PUT',
+        headers: {
+            'Authorization': `token ${GITHUB_TOKEN}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`PUT failed: ${res.status} ${errText}`);
+    }
+    const json = await res.json();
+    return json.content.sha;
+}
+
+// Обновление данных комнаты с автоматическим разрешением конфликтов (один повтор)
+async function saveRoomData(roomCode, newRoomData, retry = true) {
+    try {
+        const { data, sha } = await fetchDB();
+        currentSha = sha;
+        if (!data.rooms[roomCode]) data.rooms[roomCode] = { salt: null, messages: [] };
+        data.rooms[roomCode] = newRoomData;
+        const newSha = await putDB(data, currentSha);
+        currentSha = newSha;
+        return true;
+    } catch (err) {
+        console.warn('saveRoomData conflict/error:', err);
+        if (retry) {
+            setStatus('Конфликт данных, повторная попытка...');
+            await new Promise(r => setTimeout(r, 500));
+            return saveRoomData(roomCode, newRoomData, false);
+        } else {
+            setStatus('Ошибка сохранения. Попробуйте позже.', true);
+            return false;
+        }
+    }
+}
+
+// ======================== КРИПТОГРАФИЯ (Web Crypto) ========================
+async function deriveKeyFromRoomCode(roomCode, saltBytes) {
     const enc = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
-        'raw',
-        enc.encode(code),
-        'PBKDF2',
-        false,
-        ['deriveKey']
+        'raw', enc.encode(roomCode), { name: 'PBKDF2' }, false, ['deriveKey']
     );
     return crypto.subtle.deriveKey(
-        {
-            name: 'PBKDF2',
-            salt: SALT,
-            iterations: PBKDF2_ITERATIONS,
-            hash: 'SHA-256'
-        },
+        { name: 'PBKDF2', salt: saltBytes, iterations: 100000, hash: 'SHA-256' },
         keyMaterial,
         { name: 'AES-GCM', length: 256 },
         false,
@@ -68,299 +148,346 @@ async function deriveKey(code) {
     );
 }
 
-// ----- Шифрование / дешифрование -----
-async function encryptMessage(plainText) {
+function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+}
+
+function base64ToArrayBuffer(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+}
+
+async function encryptMessage(text, key) {
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const enc = new TextEncoder();
-    const ciphertext = await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv },
-        cryptoKey,
-        enc.encode(plainText)
-    );
-    return { iv: Array.from(iv), ciphertext: Array.from(new Uint8Array(ciphertext)) };
+    const encoded = new TextEncoder().encode(text);
+    const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
+    return {
+        encryptedBase64: arrayBufferToBase64(encrypted),
+        ivBase64: arrayBufferToBase64(iv)
+    };
 }
 
-async function decryptMessage(ivArray, ciphertextArray) {
-    const iv = new Uint8Array(ivArray);
-    const ciphertext = new Uint8Array(ciphertextArray);
-    const plainBuf = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
-        cryptoKey,
-        ciphertext
-    );
-    return new TextDecoder().decode(plainBuf);
+async function decryptMessage(encryptedBase64, ivBase64, key) {
+    const encrypted = base64ToArrayBuffer(encryptedBase64);
+    const iv = base64ToArrayBuffer(ivBase64);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, encrypted);
+    return new TextDecoder().decode(decrypted);
 }
 
-// ----- Отображение сообщения -----
-function appendMessage({ id, text, own, edited = false }) {
-    const div = document.createElement('div');
-    div.className = `message ${own ? 'own' : ''}`;
-    div.dataset.msgId = id;
-    div.innerHTML = `
-        <div class="message-bubble">
-            <div class="text">${escapeHtml(text)}</div>
-            <div class="meta">
-                ${own ? '<button class="edit-btn" data-id="' + id + '">✎</button>' : ''}
-                ${edited ? '<span class="edited-mark">изменено</span>' : ''}
-            </div>
-        </div>
-    `;
-    messagesList.appendChild(div);
-    scrollToBottom();
-
-    // Навешиваем обработчик редактирования
-    if (own) {
-        div.querySelector('.edit-btn')?.addEventListener('click', (e) => {
-            const msgId = e.target.dataset.id;
-            startEdit(msgId);
-        });
-    }
-    return div;
+// Генерация соли (16 байт)
+function generateSalt() {
+    return crypto.getRandomValues(new Uint8Array(16));
 }
 
-function updateMessageText(id, newText) {
-    const el = document.querySelector(`.message[data-msg-id="${id}"]`);
-    if (!el) return;
-    const textEl = el.querySelector('.text');
-    if (textEl) textEl.textContent = newText;
-    const meta = el.querySelector('.meta');
-    if (meta && !meta.querySelector('.edited-mark')) {
-        const mark = document.createElement('span');
-        mark.className = 'edited-mark';
-        mark.textContent = 'изменено';
-        meta.appendChild(mark);
-    }
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-function scrollToBottom() {
-    const container = document.getElementById('messages-container');
-    container.scrollTop = container.scrollHeight;
-}
-
-// ----- Редактирование -----
-function startEdit(msgId) {
-    // Найти текст
-    const el = document.querySelector(`.message[data-msg-id="${msgId}"] .text`);
-    if (!el) return;
-    editingMsgId = msgId;
-    messageInput.value = el.textContent;
-    messageInput.focus();
-    editBanner.classList.remove('hidden');
-    btnSend.textContent = '✎';
-}
-
-function cancelEdit() {
-    editingMsgId = null;
-    messageInput.value = '';
-    editBanner.classList.add('hidden');
-    btnSend.textContent = '➤';
-}
-
-// ----- Отправка сообщения / редактирования -----
-async function sendMessage() {
-    const text = messageInput.value.trim();
-    if (!text || !conn || !cryptoKey) return;
-
-    if (editingMsgId) {
-        // Отправляем пакет редактирования
-        const payload = { type: 'edit', id: editingMsgId, text };
-        const encrypted = await encryptMessage(JSON.stringify(payload));
-        conn.send(encrypted);
-        updateMessageText(editingMsgId, text);
-        cancelEdit();
-    } else {
-        const id = generateMsgId();
-        const payload = { type: 'message', id, text };
-        const encrypted = await encryptMessage(JSON.stringify(payload));
-        conn.send(encrypted);
-        appendMessage({ id, text, own: true });
-    }
-    messageInput.value = '';
-}
-
-// ----- Обработка входящих данных -----
-async function handleData(data) {
+// ======================== ЗАГРУЗКА И ОТОБРАЖЕНИЕ СООБЩЕНИЙ ========================
+async function loadRoomAndDecrypt(roomCode) {
     try {
-        const plainText = await decryptMessage(data.iv, data.ciphertext);
-        const obj = JSON.parse(plainText);
-        if (obj.type === 'message') {
-            appendMessage({ id: obj.id, text: obj.text, own: false });
-        } else if (obj.type === 'edit') {
-            updateMessageText(obj.id, obj.text);
-        }
-    } catch (err) {
-        console.error('Ошибка расшифровки:', err);
-    }
-}
-
-// ----- PeerJS подключение -----
-function initPeer(id) {
-    peer = new Peer(id, {
-        // debug: 2, // можно включить для отладки
-    });
-    myPeerId = id;
-
-    peer.on('open', (pid) => {
-        console.log('Peer открыт:', pid);
-        if (roomCode && !isConnected) {
-            // Если мы создатель – ждём входящего соединения
-            // Если присоединились – уже вызвали connectToRoom, тут ничего
-        }
-    });
-
-    peer.on('connection', (incomingConn) => {
-        if (conn && conn.open) {
-            incomingConn.close();
+        const { data, sha } = await fetchDB();
+        currentSha = sha;
+        const room = data.rooms[roomCode];
+        if (!room || !room.salt) {
+            // Новая комната: соли нет, сообщений нет
+            currentSalt = null;
+            currentKey = null;
+            messagesList = [];
+            renderMessages();
             return;
         }
-        setupConnection(incomingConn);
-    });
-
-    peer.on('error', (err) => {
-        console.error('Peer error:', err);
-        if (loginScreen.classList.contains('active')) {
-            loginError.textContent = 'Ошибка соединения. Попробуйте другой код.';
+        // Восстанавливаем соль
+        const saltBytes = base64ToArrayBuffer(room.salt);
+        currentSalt = new Uint8Array(saltBytes);
+        currentKey = await deriveKeyFromRoomCode(roomCode, currentSalt);
+        
+        // Расшифровываем сообщения
+        const decryptedMessages = [];
+        for (const msg of room.messages) {
+            try {
+                const text = await decryptMessage(msg.encryptedText, msg.iv, currentKey);
+                decryptedMessages.push({
+                    id: msg.id,
+                    text: text,
+                    timestamp: msg.timestamp,
+                    edited: msg.edited || false,
+                    editedAt: msg.editedAt || null,
+                    senderId: msg.senderId
+                });
+            } catch (e) {
+                console.warn('Ошибка расшифровки', e);
+                decryptedMessages.push({ id: msg.id, text: '⚠️ [ошибка расшифровки]', timestamp: msg.timestamp, edited: false, senderId: msg.senderId });
+            }
         }
-    });
-
-    peer.on('disconnected', () => {
-        // Пытаемся переподключиться
-        peer.reconnect();
-    });
-}
-
-function connectToRoom(remoteId) {
-    if (!peer) return;
-    const newConn = peer.connect(remoteId, { reliable: true });
-    setupConnection(newConn);
-}
-
-function setupConnection(connection) {
-    conn = connection;
-    conn.on('open', () => {
-        isConnected = true;
-        console.log('Соединение установлено');
-        // Очищаем сообщения
-        messagesList.innerHTML = '';
-        // Если мы присоединились (remote peer), показываем чат
-        showChatScreen();
-    });
-
-    conn.on('data', (data) => {
-        handleData(data);
-    });
-
-    conn.on('close', () => {
-        isConnected = false;
-        conn = null;
-        // Возвращаем на экран входа?
-        appendSystemMessage('Собеседник отключился.');
-    });
-
-    conn.on('error', (err) => {
-        console.error('Connection error:', err);
-        appendSystemMessage('Ошибка соединения.');
-    });
-}
-
-function appendSystemMessage(text) {
-    const div = document.createElement('div');
-    div.style.textAlign = 'center';
-    div.style.color = '#72767d';
-    div.style.fontSize = '12px';
-    div.style.margin = '8px 0';
-    div.textContent = text;
-    messagesList.appendChild(div);
-    scrollToBottom();
-}
-
-function showChatScreen() {
-    loginScreen.classList.remove('active');
-    chatScreen.classList.add('active');
-    currentCodeSpan.textContent = roomCode;
-    messageInput.focus();
-}
-
-function showLoginScreen() {
-    chatScreen.classList.remove('active');
-    loginScreen.classList.add('active');
-    // Закрыть соединения
-    if (conn) {
-        conn.close();
-        conn = null;
+        messagesList = decryptedMessages.sort((a,b) => a.timestamp - b.timestamp);
+        renderMessages();
+    } catch (err) {
+        console.error(err);
+        setStatus('Ошибка загрузки комнаты', true);
     }
-    if (peer) {
-        peer.destroy();
-        peer = null;
-    }
-    isConnected = false;
-    roomCode = '';
-    cryptoKey = null;
-    joinCodeInput.value = '';
-    loginError.textContent = '';
 }
 
-// ----- Обработчики UI -----
-btnCreate.addEventListener('click', async () => {
-    loginError.textContent = '';
-    const code = generateCode();
-    roomCode = code;
-    cryptoKey = await deriveKey(code);
-    initPeer(code); // peerId = code
-    showChatScreen();
-});
-
-btnJoin.addEventListener('click', async () => {
-    loginError.textContent = '';
-    const code = joinCodeInput.value.trim();
-    if (!code) {
-        loginError.textContent = 'Введите код комнаты';
+// Отрисовка сообщений
+function renderMessages() {
+    if (!messagesContainer) return;
+    if (messagesList.length === 0) {
+        messagesContainer.innerHTML = '<div class="empty-chat-placeholder">💬 Нет сообщений. Напишите первое!</div>';
         return;
     }
-    roomCode = code;
-    cryptoKey = await deriveKey(code);
-    // Генерируем себе случайный peerId, чтобы не совпадать с кодом (код - id создателя)
-    const randomId = generateCode() + '-guest';
-    initPeer(randomId);
-    // Чуть подождём открытия peer и подключимся
-    setTimeout(() => {
-        if (peer && peer.id) {
-            connectToRoom(code);
-        } else {
-            loginError.textContent = 'Не удалось инициализировать peer';
+    messagesContainer.innerHTML = '';
+    for (const msg of messagesList) {
+        const isOwn = (msg.senderId === senderId);
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${isOwn ? 'own' : 'other'}`;
+        if (!isOwn) {
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'avatar';
+            avatarDiv.textContent = '👤';
+            msgDiv.appendChild(avatarDiv);
         }
-    }, 600);
-});
+        const bubbleDiv = document.createElement('div');
+        bubbleDiv.className = 'bubble';
+        const textSpan = document.createElement('div');
+        textSpan.textContent = msg.text;
+        bubbleDiv.appendChild(textSpan);
+        const timeSpan = document.createElement('div');
+        timeSpan.className = 'message-time';
+        const date = new Date(msg.timestamp);
+        timeSpan.textContent = date.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        if (msg.edited) {
+            const editedSpan = document.createElement('span');
+            editedSpan.className = 'message-edited';
+            editedSpan.textContent = '(изменено)';
+            timeSpan.appendChild(editedSpan);
+        }
+        bubbleDiv.appendChild(timeSpan);
+        msgDiv.appendChild(bubbleDiv);
+        
+        // Добавляем контекстное меню (правый клик) для своих сообщений
+        if (isOwn) {
+            msgDiv.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                startEditingMessage(msg.id);
+            });
+            // Для мобильных: долгое нажатие
+            let touchTimer;
+            msgDiv.addEventListener('touchstart', () => {
+                touchTimer = setTimeout(() => startEditingMessage(msg.id), 500);
+            });
+            msgDiv.addEventListener('touchend', () => clearTimeout(touchTimer));
+            msgDiv.addEventListener('touchmove', () => clearTimeout(touchTimer));
+        }
+        messagesContainer.appendChild(msgDiv);
+    }
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
 
-btnBack.addEventListener('click', showLoginScreen);
+// Редактирование: подставить текст в поле ввода
+function startEditingMessage(msgId) {
+    const msg = messagesList.find(m => m.id === msgId);
+    if (!msg || msg.senderId !== senderId) return;
+    isEditing = true;
+    editingMsgId = msgId;
+    messageInput.value = msg.text;
+    messageInput.focus();
+    sendBtn.textContent = '✎';
+    setStatus('Редактирование сообщения...');
+}
 
-btnCopyCode.addEventListener('click', () => {
-    navigator.clipboard.writeText(roomCode).then(() => {
-        alert('Код скопирован!');
-    }).catch(() => {
-        prompt('Код комнаты (скопируйте вручную):', roomCode);
-    });
-});
+// Отправка нового или редактирование
+async function sendOrEditMessage() {
+    let text = messageInput.value.trim();
+    if (!text) return;
+    if (!currentRoom) return;
+    
+    // Убедимся, что у нас есть соль и ключ (для новой комнаты)
+    if (!currentKey || !currentSalt) {
+        // Генерируем соль для новой комнаты (первое сообщение)
+        const newSalt = generateSalt();
+        currentSalt = newSalt;
+        currentKey = await deriveKeyFromRoomCode(currentRoom, currentSalt);
+    }
+    
+    const encrypted = await encryptMessage(text, currentKey);
+    const newMsg = {
+        id: isEditing && editingMsgId ? editingMsgId : crypto.randomUUID(),
+        encryptedText: encrypted.encryptedBase64,
+        iv: encrypted.ivBase64,
+        timestamp: Date.now(),
+        edited: isEditing ? true : false,
+        editedAt: isEditing ? Date.now() : null,
+        senderId: senderId
+    };
+    
+    // Оптимистичное обновление UI
+    if (isEditing && editingMsgId) {
+        const index = messagesList.findIndex(m => m.id === editingMsgId);
+        if (index !== -1) {
+            messagesList[index] = { ...messagesList[index], text: text, timestamp: Date.now(), edited: true, editedAt: Date.now() };
+        }
+    } else {
+        messagesList.push({
+            id: newMsg.id,
+            text: text,
+            timestamp: newMsg.timestamp,
+            edited: false,
+            editedAt: null,
+            senderId: senderId
+        });
+    }
+    renderMessages();
+    messageInput.value = '';
+    sendBtn.textContent = '➤';
+    isEditing = false;
+    editingMsgId = null;
+    
+    // Сохраняем в базу GitHub
+    try {
+        const { data, sha } = await fetchDB();
+        currentSha = sha;
+        if (!data.rooms[currentRoom]) {
+            data.rooms[currentRoom] = { salt: arrayBufferToBase64(currentSalt), messages: [] };
+        }
+        const roomData = data.rooms[currentRoom];
+        // Обновляем массив зашифрованных сообщений
+        if (isEditing && editingMsgId) {
+            const idx = roomData.messages.findIndex(m => m.id === editingMsgId);
+            if (idx !== -1) roomData.messages[idx] = newMsg;
+        } else {
+            roomData.messages.push(newMsg);
+        }
+        // Убедимся, что соль правильная
+        roomData.salt = arrayBufferToBase64(currentSalt);
+        await putDB(data, currentSha);
+        setStatus('Сохранено');
+    } catch (err) {
+        setStatus('Ошибка сохранения, но сообщение осталось локально', true);
+        console.error(err);
+        // Откат UI не делаем, но при следующем poll данные перезатрутся.
+    }
+}
 
-btnSend.addEventListener('click', sendMessage);
+// ======================== POLLING & ENTER ROOM ========================
+async function pollChanges() {
+    if (!currentRoom) return;
+    try {
+        const { data, sha } = await fetchDB();
+        if (sha !== currentSha) {
+            currentSha = sha;
+            const room = data.rooms[currentRoom];
+            if (room && room.salt) {
+                // Обновляем ключ и сообщения если соль та же (или могла поменяться только при создании)
+                const newSaltBytes = base64ToArrayBuffer(room.salt);
+                if (!currentSalt || JSON.stringify(currentSalt) !== JSON.stringify(new Uint8Array(newSaltBytes))) {
+                    currentSalt = new Uint8Array(newSaltBytes);
+                    currentKey = await deriveKeyFromRoomCode(currentRoom, currentSalt);
+                }
+                // Расшифровываем заново
+                const newMessages = [];
+                for (const msg of room.messages) {
+                    try {
+                        const text = await decryptMessage(msg.encryptedText, msg.iv, currentKey);
+                        newMessages.push({ id: msg.id, text, timestamp: msg.timestamp, edited: msg.edited, editedAt: msg.editedAt, senderId: msg.senderId });
+                    } catch(e) { newMessages.push({ id: msg.id, text: '⚠️ ошибка', timestamp: msg.timestamp, edited: false, senderId: msg.senderId }); }
+                }
+                messagesList = newMessages.sort((a,b)=>a.timestamp-b.timestamp);
+                renderMessages();
+            } else if (room && !room.salt) {
+                // Пустая комната без сообщений
+                messagesList = [];
+                renderMessages();
+            }
+        }
+    } catch (err) {
+        console.warn('poll error', err);
+    }
+}
 
+function startPolling() {
+    if (pollingInterval) clearInterval(pollingInterval);
+    pollingInterval = setInterval(pollChanges, 4000);
+}
+
+function stopPolling() {
+    if (pollingInterval) clearInterval(pollingInterval);
+    pollingInterval = null;
+}
+
+async function enterRoom(roomCode, isNew = false) {
+    currentRoom = roomCode;
+    localStorage.setItem('lastRoom', roomCode);
+    roomCodeDisplay.textContent = roomCode;
+    startScreen.classList.remove('active');
+    chatScreen.classList.add('active');
+    messageInput.value = '';
+    sendBtn.textContent = '➤';
+    isEditing = false;
+    editingMsgId = null;
+    
+    setStatus('Загрузка комнаты...');
+    await loadRoomAndDecrypt(roomCode);
+    startPolling();
+}
+
+function exitToStart() {
+    stopPolling();
+    currentRoom = null;
+    currentKey = null;
+    currentSalt = null;
+    messagesList = [];
+    startScreen.classList.add('active');
+    chatScreen.classList.remove('active');
+    roomCodeInput.value = '';
+    setStatus('');
+}
+
+// Создание новой комнаты
+async function createNewRoom() {
+    let newCode = generateRoomCode();
+    // Проверка уникальности (простая)
+    const { data } = await fetchDB();
+    while (data.rooms[newCode]) {
+        newCode = generateRoomCode();
+    }
+    copyToClipboard(newCode);
+    await enterRoom(newCode, true);
+    // При первом входе соль ещё не создана, она появится при первом сообщении
+    showToast(`Комната ${newCode} создана! Код скопирован.`);
+}
+
+// Обработчики
+joinBtn.onclick = async () => {
+    let code = roomCodeInput.value.trim().toUpperCase();
+    if (!code) { startError.textContent = 'Введите код комнаты'; startError.classList.remove('hidden'); return; }
+    startError.classList.add('hidden');
+    try {
+        const { data } = await fetchDB();
+        if (!data.rooms[code]) {
+            // комната не существует, но войти можно (пустая)
+            await enterRoom(code);
+        } else {
+            await enterRoom(code);
+        }
+    } catch(e) { startError.textContent = 'Ошибка входа'; startError.classList.remove('hidden'); }
+};
+
+createBtn.onclick = createNewRoom;
+exitBtn.onclick = exitToStart;
+copyCodeBtn.onclick = () => copyToClipboard(currentRoom);
+sendBtn.onclick = sendOrEditMessage;
 messageInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        sendMessage();
+        sendOrEditMessage();
     }
 });
 
-btnCancelEdit.addEventListener('click', cancelEdit);
-
-// Автоувеличение высоты textarea
-messageInput.addEventListener('input', () => {
-    messageInput.style.height = 'auto';
-    messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
-});
+// Восстановление последней комнаты при загрузке
+window.onload = async () => {
+    if (lastStoredRoom) {
+        roomCodeInput.value = lastStoredRoom;
+        joinBtn.click();
+    }
+};

@@ -2,56 +2,50 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Chat</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Simple Chat — зашифрованный диалог 1‑на‑1</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Токен и данные репозитория (не коммитится) -->
+    <script src="token.js"></script>
+    <script src="script.js" defer></script>
 </head>
 <body>
-    <div id="app">
-        <!-- Экран входа -->
-        <div id="login-screen" class="screen active">
-            <div class="login-box">
-                <h1>Simple Chat</h1>
-                <p>Приватный шифрованный чат 1‑на‑1</p>
-                <div class="actions">
-                    <button id="btn-create">Создать чат</button>
-                    <div class="separator">или</div>
-                    <div class="join-group">
-                        <input id="join-code" type="text" placeholder="Код комнаты" maxlength="20" autocomplete="off">
-                        <button id="btn-join">Войти</button>
-                    </div>
-                </div>
-                <div id="login-error" class="error"></div>
+    <!-- СТАРТОВЫЙ ЭКРАН -->
+    <div id="startScreen" class="screen active">
+        <div class="card">
+            <h1>🔒 Simple Chat</h1>
+            <p>Личные зашифрованные диалоги 1‑на‑1</p>
+            <div class="input-group">
+                <input type="text" id="roomCodeInput" placeholder="Код комнаты (например: ABC123XY)" maxlength="20">
+                <button id="joinBtn" class="btn-primary">Войти</button>
             </div>
-        </div>
-
-        <!-- Экран чата -->
-        <div id="chat-screen" class="screen">
-            <div class="chat-header">
-                <button id="btn-back" class="btn-icon">←</button>
-                <div class="chat-info">
-                    <span class="chat-title">Комната</span>
-                    <span class="chat-code" id="current-code">—</span>
-                </div>
-                <button id="btn-copy-code" class="btn-icon" title="Скопировать код">📋</button>
-            </div>
-            <div id="messages-container" class="messages-container">
-                <div id="messages-list"></div>
-            </div>
-            <div class="input-area">
-                <div id="edit-banner" class="edit-banner hidden">
-                    <span>Редактирование</span>
-                    <button id="btn-cancel-edit" class="btn-small">Отмена</button>
-                </div>
-                <div class="input-row">
-                    <textarea id="message-input" rows="1" placeholder="Сообщение..." autofocus></textarea>
-                    <button id="btn-send" class="btn-send">➤</button>
-                </div>
-            </div>
+            <div class="divider">— или —</div>
+            <button id="createBtn" class="btn-secondary">✨ Создать новую комнату</button>
+            <div id="startError" class="error-msg hidden"></div>
         </div>
     </div>
 
-    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
-    <script src="script.js"></script>
+    <!-- ЭКРАН ЧАТА -->
+    <div id="chatScreen" class="screen">
+        <div class="chat-header">
+            <div class="room-info">
+                <span class="room-code-label">Код комнаты:</span>
+                <span id="roomCodeDisplay" class="room-code"></span>
+                <button id="copyCodeBtn" class="icon-btn" title="Копировать код">📋</button>
+            </div>
+            <button id="exitBtn" class="exit-btn">🚪 Выйти</button>
+        </div>
+        <div id="messagesContainer" class="messages-container">
+            <!-- Сообщения будут добавлены динамически -->
+            <div class="empty-chat-placeholder">💬 Нет сообщений. Напишите первое!</div>
+        </div>
+        <div class="message-input-area">
+            <textarea id="messageInput" rows="1" placeholder="Введите сообщение..."></textarea>
+            <button id="sendBtn" class="send-btn" aria-label="Отправить">➤</button>
+        </div>
+        <div class="status-bar" id="statusBar"></div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
 </body>
 </html>
